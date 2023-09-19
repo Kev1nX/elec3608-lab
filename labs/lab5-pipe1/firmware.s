@@ -16,21 +16,29 @@
  *  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  */
+# addi x10, zero, 0
+# addi x10, x10, 1
+# addi x10, x10, 2
+# addi x10, x10, 3
+# addi x10, x10, 4
+# addi x10, x10, 5
+# addi x10, x10, 6
+# addi x10, x10, 7
+# addi x10, x10, 8
+# addi x10, x10, 9
+# addi x10, x10, 10
 
 .section .text
 .global main
 .global _start
+
 _start:
-addi x10, zero, 0
-addi x10, x10, 1
-addi x10, x10, 2
-addi x10, x10, 3
-addi x10, x10, 4
-addi x10, x10, 5
-addi x10, x10, 6
-addi x10, x10, 7
-addi x10, x10, 8
-addi x10, x10, 9
-addi x10, x10, 10
-nop
+    addi x8, zero, 10
+    addi x9, zero, 0
+    addi x10, zero, 0
+loop:
+    addi x9, x9, 1
+    add x10, x10, x9
+    bne x9, x8, loop
+    addi x1,zero,0
 ebreak

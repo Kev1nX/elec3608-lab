@@ -102,9 +102,14 @@ module rv3608c (
 	// J - unconditional jumps
 	logic   [20:0] imm_j;
 	assign  {imm_j[20], imm_j[10:1], imm_j[11], imm_j[19:12], imm_j[0]} = {insn[31:12], 1'b0};
+    
+    // S - Store
+    logic   [11:0] imm_s;
+    assign  {imm_s[11:5],imm_s[4:0]} = {insn[31:25],insn[11:7]};
 
 	wire    [31:0] imm_b_sext = 32'(signed'(imm_b));
 	wire    [31:0] imm_j_sext = 32'(signed'(imm_j));
+    wire    [31:0] imm_s_sext = 32'(signed'(imm_s));
 
     // ALU 
 	logic  alu_eq_zero;
@@ -153,6 +158,18 @@ module rv3608c (
 				case (insn_funct3)
                     // LAB need to map branches to ALU operations here
 					3'b 000 /* BEQ  */: alu_op = `ALU_SUB;
+                    3'b 001 /* BNE  */: alu_op = `ALU_SUB;
+                    3'b 100 /* BLT  */: alu_op = `ALU_SLT;
+                    3'b 101 /* BGE  */: alu_op = `ALU_SLT;
+                    3'b 110 /* BLTU  */: alu_op = `ALU_SLTU;
+                    3'b 111 /* BGEU  */: alu_op = `ALU_SLTU;
+                endcase
+            end
+
+            `OPCODE_LOAD: begin
+				case (insn_funct3)
+                    // LAB need to map load to ALU operations here
+					3'b 010 /* LW  */: alu_op = `ALU_ADD;
                 endcase
             end
 
@@ -180,6 +197,7 @@ module rv3608c (
 		regwrite = 0;
 		npc = pc + 4;
         rfilewdata = alu_result;
+        dmem_wr_enable = 0; // set data memory write enable to 0 as default
 		case (insn_opcode)
 			0: alu_op = `ALU_ADD;	// NOP
 
@@ -193,17 +211,28 @@ module rv3608c (
 
             `OPCODE_JAL: begin
                 // LAB implement JAL control signals here
+                npc = pc + imm_j_sext;
+                rfilewdata = pc + 4;
+                regwrite = 1;
             end
 
             `OPCODE_JALR: begin
                 // LAB implement JALR control signals here
+                npc = (regfile[insn_rs1] + imm_i_sext) & ~32'b 1;
+                rfilewdata = pc + 4;
+                regwrite = 1;
             end
 
 			// branch instructions: Branch If Equal, Branch Not Equal, Branch Less Than, Branch Greater Than, Branch Less Than Unsigned, Branch Greater Than Unsigned
 		    `OPCODE_BRANCH: begin
                 case (insn_funct3)
                     // handle different branch types here
-					3'b 000 /* BEQ  */: begin if (alu_eq_zero) npc = pc + imm_b_sext; end
+					3'b 000 /* BEQ  */: begin if (alu_eq_zero) npc = pc + imm_b_sext; end // additional adder with mux
+                    3'b 001 /* BNE  */: begin if (alu_eq_zero == 0) npc = pc + imm_b_sext; end // additional adder with mux
+                    3'b 100 /* BLT  */: begin if (alu_eq_zero == 0) npc = pc + imm_b_sext; end 
+                    3'b 101 /* BGE  */: begin if (alu_eq_zero) npc = pc + imm_b_sext; end
+                    3'b 110 /* BLTU  */: begin if (alu_eq_zero == 0) npc = pc + imm_b_sext; end 
+                    3'b 111 /* BGEU  */: begin if (alu_eq_zero) npc = pc + imm_b_sext; end  
                     // LAB implement missing branch types
 					default: illegalinsn = 1;
 				endcase
@@ -211,11 +240,18 @@ module rv3608c (
 
             `OPCODE_LOAD: begin
                 // LAB implement LW here
+                dmem_rd_addr = regfile[insn_rs1] + imm_i_sext;
+                dmem_rd_data = dmem[dmem_rd_addr];
 		        $display("lw from 0x%08x = 0x%08x", dmem_rd_addr, dmem_rd_data);
             end
 
             `OPCODE_STORE: begin
                 // LAB implement SW here
+                logic [31:0] rs2_value = regfile[insn_rs2];
+
+                dmem_wr_data = regfile[insn_rs2];
+                dmem_wr_addr = regfile[insn_rs1] + imm_s_sext;
+                dmem_wr_enable = 1;
 		        $display("sw 0x%08x to = 0x%08x", rs2_value, dmem_wr_addr);
             end
 
@@ -241,7 +277,9 @@ module rv3608c (
     	end
 
         // LAB update the data memory here
-        
+        if (dmem_wr_enable == 1) begin
+            dmem[dmem_wr_addr] = dmem_wr_data;
+        end 
         // reset
         if (reset) begin
 		    pc <= 0;

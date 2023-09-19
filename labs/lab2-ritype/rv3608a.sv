@@ -68,8 +68,17 @@ module rv3608a (
 			`OPCODE_OP_IMM: begin
 				casez ({insn_funct7, insn_funct3})
 					10'b zzzzzzz_000 /* ADDI  */: alu_op = `ALU_ADD;
+                    10'b zzzzzzz_100 /* XORI  */: alu_op = `ALU_XOR;
+                    10'b zzzzzzz_110 /* ORI  */: alu_op = `ALU_OR;
+                    10'b zzzzzzz_001 /* SLLI  */: alu_op = `ALU_SLL;
 				endcase
 			end
+            `OPCODE_OP: begin
+				casez ({insn_funct7, insn_funct3})
+					10'b 0000000_000 /* ADD  */: alu_op = `ALU_ADD;
+				endcase
+			end
+            default: illegalinsn=1;
 		endcase
 	end
 
@@ -116,7 +125,6 @@ module rv3608a (
 		if (!trapped && !reset) begin
 			if (illegalinsn)
 				trapped <= 1;
-	
 			pc <= pc + 4;
             $display("pc = 0x%08x", pc);
         	regfile[insn_rd] <= alu_result;

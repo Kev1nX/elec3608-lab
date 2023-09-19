@@ -70,11 +70,14 @@ module nerv #(
 	// registers, instruction reg, program counter, next pc
 
 	// pipeline registers
+	logic [31:0] p_insn;
+
 	logic [31:0] regfile [0:NUMREGS-1];
-	wire [31:0] insn;
+	wire [31:0] insn = p_insn;
 	logic [31:0] npc;
 	logic [31:0] pc;
 	logic [31:0] ppc1;
+	logic [31:0] ppc2;
 	logic [31:0] imem_addr_q;
 
 	always @(posedge clock) begin
@@ -83,12 +86,12 @@ module nerv #(
 
 	// instruction memory pointer
 	assign imem_addr = (trap || mem_rd_enable_q) ? imem_addr_q : npc;
-	assign insn = imem_data;
+
 
 
 	// rs1 and rs2 are source for the instruction
-	wire [31:0] rs1_value = !p_reg3 ? 0 : regfile[p_reg3];
-	wire [31:0] rs2_value = !p_reg2 ? 0 : regfile[p_reg2];
+	wire [31:0] rs1_value = !insn_rs1 ? 0 : regfile[insn_rs1];
+	wire [31:0] rs2_value = !insn_rs2 ? 0 : regfile[insn_rs2];
 
 	// components of the instruction
 	wire [6:0] insn_funct7;
@@ -105,40 +108,37 @@ module nerv #(
 	logic [31:0] p_reg4;
 	logic [31:0] p_reg5;
 	logic [31:0] p_reg6;
-	logic [11:0] p_reg7;
-	logic [19:0] p_reg8;
+
 
 	// split R-type instruction - see section 2.2 of RiscV spec
 	assign {insn_funct7, insn_rs2, insn_rs1, insn_funct3, insn_rd, insn_opcode} = insn;
-    
 
-	// added pipeline registers 
 	always @(posedge clock) begin
+		p_insn <= imem_data;
 		p_reg1 <= insn_funct7;
 		p_reg2 <= insn_rs2;
 		p_reg3 <= insn_rs1;
 		p_reg4 <= insn_funct3;
 		p_reg5 <= insn_rd;
 		p_reg6 <= insn_opcode;
-		p_reg7 <= insn[31:20];
-		p_reg8 <= insn[31:12];
+		
 	end
 	// setup for I, S, B & J type instructions
 	// I - short immediates and loads
 	wire [11:0] imm_i;
-	assign imm_i = p_reg7;
+	assign imm_i = insn[31:20];
 
 	// S - stores
 	wire [11:0] imm_s;
-	assign imm_s[11:5] = p_reg1, imm_s[4:0] = p_reg5;
+	assign imm_s[11:5] = insn_funct7, imm_s[4:0] = insn_rd;
 
 	// B - conditionals
 	wire [12:0] imm_b;
-	assign {imm_b[12], imm_b[10:5]} = p_reg1, {imm_b[4:1], imm_b[11]} = p_reg5, imm_b[0] = 1'b0;
+	assign {imm_b[12], imm_b[10:5]} = insn_funct7, {imm_b[4:1], imm_b[11]} = insn_rd, imm_b[0] = 1'b0;
 
 	// J - unconditional jumps
 	wire [20:0] imm_j;
-	assign {imm_j[20], imm_j[10:1], imm_j[11], imm_j[19:12], imm_j[0]} = {p_reg8, 1'b0};
+	assign {imm_j[20], imm_j[10:1], imm_j[11], imm_j[19:12], imm_j[0]} = {insn[31:12], 1'b0};
 
 	wire [31:0] imm_i_sext = $signed(imm_i);
 	wire [31:0] imm_s_sext = $signed(imm_s);
@@ -186,14 +186,13 @@ module nerv #(
 	logic [31:0] next_rd;
 	logic illinsn;
 
-
 	logic trapped;
 	logic trapped_q;
 	assign trap = trapped;
 
 	always_comb begin
 		// advance pc
-		npc = ppc1 + 4;
+		npc = pc + 4;
 
 		// defaults for read, write
 		next_wr = 0;
@@ -380,6 +379,7 @@ module nerv #(
 		if (!trapped && !reset && !reset_q) begin
 			if (illinsn)
 				trapped <= 1;
+			ppc2 <= ppc1;
 			ppc1 <= pc;
 			pc <= npc;
 			// update registers from memory or rd (destination)
